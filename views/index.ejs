@@ -124,10 +124,6 @@
           if (rpcData.filename && !rpcData.progress && !this.oldProgress) {
             socket.emit('command', 'print')
             console.log('Trying to print... printer maybe offline.');
-          }
-
-          if (rpcData.progress) {
-            this.oldProgress = rpcData.progress
             if (!this.sent) {
               axios.put(`/job/${this.jobId}`, { status: 'printing' })
                 .then(res => {
@@ -137,6 +133,10 @@
                 .catch(err => console.error(err))
               this.sent = true
             }
+          }
+
+          if (rpcData.progress) {
+            this.oldProgress = rpcData.progress
             console.log('Printing...');
           }
 
