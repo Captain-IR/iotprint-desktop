@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
+    integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+  <link rel='stylesheet' href='/css/style.css' />
+  <title><%= title %></title>
+</head>
+
+<body>
+  <div id="app">
+    <div class="container">
+      <h1 class="text-center"><%= title %></h1>
+      <hr>
+      <div class="row">
+        <div class="col">
+          <div class="form-group">
+            <h3>Printer</h3>
+            <div v-html="printerLogs" class="output">
+              {{ printerLogs }}
+            </div>
+            <form v-if="showForm" v-on:submit.prevent>
+              <label for="">Execute Pronsole Commands</label><br>
+              <input v-model="cmd" type="text" class="form-control w-75 mb-3 d-inline" placeholder="ex: help">
+              <button @click="sendCmd" class="btn btn-info">Send</button><br>
+              <div>
+                <button @click="startAuto" class="btn btn-primary">Cloud Mode</button>
+                <button @click="stopAuto" class="btn btn-danger">Manual Mode</button><small> stops cloud mode</small>
+              </div>
+            </form>
+          </div>
+        </div>
+        <div class="col">
+          <h3>Cloud</h3>
+          <div class="output">
+            {{ cloudLogs }}
+          </div>
+        </div>
+      </div>
+    </div>
+    <hr>
+    <div class="row">
+      <div class="col">
+        <p class="text-center">{{ rpc }}</p>
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vue"></script>
+  <script>
+    socket = io()
+
+    // axios.defaults.baseURL = 'http://localhost:5000/api'
+
+    axios.defaults.headers = { 'Content-type': 'application/json' }
+
+    var app = new Vue({
+      el: '#app',
+      data: {
+        showForm: false,
+        cmd: '',
+        printerLogs: 'Verifying Packages...\n',
+        cloudLogs: 'Offline',
+        rpc: 'ERROR: rpc server down',
+        oldProgress: null,
+        jobId: '',
+        sent: false,
+        run: true
+      },
+      methods: {
+        sendCmd: function () {
+          socket.emit('command', this.cmd)
+        },
+        autoMode: async function () {
+          socket.emit('rpcOff', { rpc: 'OFF' })
+          if (this.run) {
+            try {
+              const res = await axios.get("/job")
+              this.cloudLogs = res.data
+              this.jobId = res.data.job._id
+
+              if (res.status === 200) {
+                const productId = res.data.job.product
+                await axios.post('http://localhost:3000/auto', { productId })
+              }
+            } catch (err) {
+              console.log(err);
+              setTimeout(() => {
+                this.cloudLogs = err
+                this.autoMode()
+              }, 5000);
+            }
+          }
+        },
+        startAuto() {
+          this.run = true
+          this.autoMode()
+        },
+        stopAuto() {
+          this.run = false
+          setTimeout(() => {
+            this.cloudLogs = 'Stopped'
+          }, 5000);
+        },
+      },
+      mounted() {
+        socket.on('pronsole', (data) => {
+          this.showForm = true
+          this.printerLogs = this.printerLogs + '<br>' + data.stdout.replace('\r', ' ')
+        })
+
+        socket.on('rpcData', async (data) => {
+          if (data === 'ON') {
+            socket.emit('rpcOn', { rpc: 'ON' })
+          }
+          let rpcData = JSON.parse(data)
+
+          if (rpcData.filename && !rpcData.progress && !this.oldProgress) {
+            socket.emit('command', 'print')
+            console.log('Trying to print... printer maybe offline.');
+          }
+
+          if (rpcData.progress) {
+            this.oldProgress = rpcData.progress
+            if (!this.sent) {
+              axios.put(`/job/${this.jobId}`, { status: 'printing' })
+                .then(res => {
+                  console.log(res.data)
+                  this.cloudLogs = res.data
+                })
+                .catch(err => console.error(err))
+              this.sent = true
+            }
+            console.log('Printing...');
+          }
+
+          if (this.oldProgress && !rpcData.progress) {
+            this.oldProgress = null
+            const res = axios.put(`/job/${this.jobId}`, { status: 'finished' })
+              .then(res => {
+                console.log(res.data)
+                this.cloudLogs = res.data
+              })
+              .catch(err => console.error(err))
+            socket.emit('rpcOff', { rpc: 'OFF' })
+          }
+
+          this.rpc = rpcData
+        })
+        // Check cloud status
+        axios.get('/download').then((res) => {
+          this.cloudLogs = res.data.message
+        }).catch((err) => {
+          console.log(err);
+        });
+
+
+      }
+    })
+  </script>
+</body>
+
+</html>
