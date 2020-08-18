@@ -56,7 +56,8 @@
   <script>
     socket = io()
 
-    // axios.defaults.baseURL = 'http://localhost:5000/api'
+    axios.defaults.baseURL = 'http://localhost:5000/api'
+    // axios.defaults.baseURL = 'https://iotprint-server.herokuapp.com/api'
 
     axios.defaults.headers = { 'Content-type': 'application/json' }
 
@@ -68,31 +69,38 @@
         printerLogs: 'Verifying Packages...\n',
         cloudLogs: 'Offline',
         rpc: 'ERROR: rpc server down',
+        run: true,
         oldProgress: null,
-        jobId: '',
-        sent: false,
-        run: true
+        sentCount: 0,
+        jobId: ''
       },
       methods: {
         sendCmd: function () {
           socket.emit('command', this.cmd)
+          this.cmd = ''
         },
         autoMode: async function () {
           socket.emit('rpcOff', { rpc: 'OFF' })
           if (this.run) {
+            let res
             try {
-              const res = await axios.get("/job")
+              res = await axios.get("/job") // get the first standby job
               this.cloudLogs = res.data
               this.jobId = res.data.job._id
 
               if (res.status === 200) {
-                const productId = res.data.job.product
-                await axios.post('http://localhost:3000/auto', { productId })
+                const productId = res.data.job.product._id
+                await axios.post('http://localhost:3000/auto', { productId }) // start the cloud process
+                socket.emit('rpcOn', { rpc: 'ON' })
               }
             } catch (err) {
               console.log(err);
               setTimeout(() => {
-                this.cloudLogs = err
+                if (err.response) {
+                  this.cloudLogs = err.response.data.message
+                } else {
+                  this.cloudLogs = err
+                }
                 this.autoMode()
               }, 5000);
             }
@@ -104,55 +112,58 @@
         },
         stopAuto() {
           this.run = false
+          this.oldProgress = null
           setTimeout(() => {
             this.cloudLogs = 'Stopped'
-          }, 5000);
+          }, 7000);
         },
       },
       mounted() {
         socket.on('pronsole', (data) => {
           this.showForm = true
           this.printerLogs = this.printerLogs + '<br>' + data.stdout.replace('\r', ' ')
+          console.log('Pronsole:', data);
         })
 
-        socket.on('rpcData', async (data) => {
-          if (data === 'ON') {
-            socket.emit('rpcOn', { rpc: 'ON' })
-          }
+        socket.on('rpcData', (data) => {
           let rpcData = JSON.parse(data)
+          this.rpc = rpcData
 
           if (rpcData.filename && !rpcData.progress && !this.oldProgress) {
-            socket.emit('command', 'print')
-            console.log('Trying to print... printer maybe offline.');
-            if (!this.sent) {
-              axios.put(`/job/${this.jobId}`, { status: 'printing' })
-                .then(res => {
-                  console.log(res.data)
-                  this.cloudLogs = res.data
-                })
-                .catch(err => console.error(err))
-              this.sent = true
+            if (this.run) {
+              socket.emit('command', 'print')
             }
           }
 
           if (rpcData.progress) {
             this.oldProgress = rpcData.progress
             console.log('Printing...');
+            if (this.sentCount === 0) {
+              axios.put(`/job/${this.jobId}`, { status: 'printing' }).then((res) => {
+                this.cloudLogs = res.data
+                this.sentCount = this.sentCount + 1
+              }).catch((err) => {
+                this.cloudLogs = err.response.data.message
+              }); // change status to printing
+            }
           }
 
           if (this.oldProgress && !rpcData.progress) {
             this.oldProgress = null
+            this.sentCount = 0
             const res = axios.put(`/job/${this.jobId}`, { status: 'finished' })
               .then(res => {
                 console.log(res.data)
                 this.cloudLogs = res.data
               })
-              .catch(err => console.error(err))
+              .catch(err => {
+                console.log(err.response.data.message)
+                this.cloudLogs = res.data
+              })
             socket.emit('rpcOff', { rpc: 'OFF' })
           }
-
-          this.rpc = rpcData
         })
+
         // Check cloud status
         axios.get('/download').then((res) => {
           this.cloudLogs = res.data.message

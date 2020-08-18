@@ -43,17 +43,6 @@ exports.commands = function (cmd) {
 	}
 }
 
-exports.slice =  function(filename)  {
-	try {
-		const result = execSync(`slic3r-console.exe --load ir-config.ini ../../downloads/${filename}.stl`, options)
-			console.log(result.toString('utf8'))
-			io.getIO().emit('pronsole', result.toString('utf8'))
-			io.getIO().emit('rpcData', 'ON')
-	} catch (err) {
-		console.log(err);
-	}
-}
-
 exports.pronsole = function () {
 	try {
 		if (!pronsole.installing) {

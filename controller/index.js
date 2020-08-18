@@ -6,6 +6,7 @@ const axios = require('axios')
 const printerface = require('../printerface')
 
 // axios.defaults.baseURL = 'http://localhost:5000/api'
+axios.defaults.baseURL = 'https://iotprint-server.herokuapp.com/api'
 
 exports.index = (req, res, next) => {
 	setTimeout(() => {
@@ -22,22 +23,20 @@ exports.postAuto = async (req, res, next) => {
 	try {
 		const product = await axios.get(`/download/${productId}`)
 		const stlData = product.data
-		const filename = `${crypto.randomBytes(8).toString('hex')}`
+		const filename = `${crypto.randomBytes(8).toString('hex')}.gcode`
 
 		fs.writeFile(
-			path.join(__dirname, '..', 'downloads/', filename + '.stl'),
+			path.join(__dirname, '..', 'downloads/', filename),
 			stlData,
 			err => {
 				if (err) throw err
-				console.log('[+] STL File has beed saved')
-				printerface.slice(filename)
-				printerface.commands(`load ../../downloads/${filename}.gcode`)
+				printerface.commands(`load ../../downloads/${filename}`)
 				printerface.commands(`print`)
 			}
 		)
 		res.status(200).json({ msg: 'Start OK' })
 	} catch (err) {
-		console.log(err)
+		console.log(err.response.data.message)
 		next(err)
 	}
 }
