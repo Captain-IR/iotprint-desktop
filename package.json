@@ -1,6 +1,9 @@
 {
 	"name": "iotprint-desktop",
 	"version": "1.0.0",
+	"description": "The desktop app that connects the 3D printer with the server",
+	"author": "Captain IR",
+	"license": "MIT",
 	"private": true,
 	"scripts": {
 		"start": "node app.js",
