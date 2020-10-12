@@ -1,9 +1,10 @@
 {
-	"name": "iotprint-web",
-	"version": "0.0.0",
+	"name": "iotprint-desktop",
+	"version": "1.0.0",
 	"private": true,
 	"scripts": {
-		"start": "nodemon app.js"
+		"start": "node app.js",
+		"dev": "nodemon app.js"
 	},
 	"dependencies": {
 		"axios": "^0.19.2",
